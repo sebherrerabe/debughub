@@ -1,11 +1,8 @@
-import { execSync } from 'child_process';
-import * as path from 'path';
+import { createProgram } from '../src/cli';
 
 describe('CLI smoke test', () => {
-    const cliPath = path.resolve(__dirname, '..', 'dist', 'cli.js');
-
     it('prints help with all commands listed', () => {
-        const output = execSync(`node "${cliPath}" --help`, { encoding: 'utf-8' });
+        const output = createProgram().helpInformation();
         expect(output).toContain('debughub');
         expect(output).toContain('install');
         expect(output).toContain('start');
@@ -18,7 +15,7 @@ describe('CLI smoke test', () => {
     });
 
     it('prints version', () => {
-        const output = execSync(`node "${cliPath}" --version`, { encoding: 'utf-8' });
-        expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+        const output = createProgram().version();
+        expect(output).toMatch(/^\d+\.\d+\.\d+$/);
     });
 });
