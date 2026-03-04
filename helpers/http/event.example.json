@@ -1,0 +1,13 @@
+{
+  "ts": "2026-01-01T00:00:00.000Z",
+  "sessionId": "example-session",
+  "label": "example_label",
+  "data": {
+    "key": "value"
+  },
+  "hypothesisId": null,
+  "loc": null,
+  "level": "info",
+  "tags": null,
+  "runtime": "python"
+}
