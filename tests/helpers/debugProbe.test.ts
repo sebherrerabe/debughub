@@ -1,6 +1,3 @@
-import * as fs from 'fs';
-import * as path from 'path';
-
 // We need to test debugProbe which reads process.env
 // We'll manipulate process.env and mock fetch/fs
 

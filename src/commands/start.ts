@@ -75,7 +75,9 @@ export function start() {
         }
         // sleep
         const startTm = Date.now();
-        while (Date.now() - startTm < 100) { }
+        while (Date.now() - startTm < 100) {
+            // intentional busy-wait to keep implementation synchronous
+        }
         attempts++;
     }
 

@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 
 jest.mock('fs');
 const mockFs = fs as jest.Mocked<typeof fs>;

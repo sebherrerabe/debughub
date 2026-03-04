@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 
 jest.mock('fs');
 const mockFs = fs as jest.Mocked<typeof fs>;
@@ -115,7 +114,7 @@ describe('install command', () => {
             if (statCallCount === 1) return { isDirectory: () => true } as any;
             return { isDirectory: () => false } as any;
         });
-        mockFs.readdirSync.mockImplementation((p: any) => {
+        mockFs.readdirSync.mockImplementation((_p: any) => {
             if (statCallCount <= 1) return ['subfile.ts'] as any;
             return [] as any;
         });

@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import * as http from 'http';
 
 jest.mock('fs');
@@ -101,13 +100,13 @@ describe('doctor command', () => {
         mockFs.accessSync.mockReturnValue(undefined);
 
         const mockReq = {
-            on: jest.fn().mockImplementation((event: string, cb: Function) => {
+            on: jest.fn().mockImplementation((event: string, cb: (error: Error) => void) => {
                 if (event === 'error') cb(new Error('ECONNREFUSED'));
                 return mockReq;
             }),
             end: jest.fn(),
         };
-        mockHttp.request.mockImplementation((opts: any, cb: any) => {
+        mockHttp.request.mockImplementation((_opts: any, _cb: any) => {
             return mockReq as any;
         });
 

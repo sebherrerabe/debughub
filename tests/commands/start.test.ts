@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 
 jest.mock('fs');
 jest.mock('child_process');
@@ -52,7 +51,7 @@ describe('start command', () => {
 
     it('cleans stale state when process is not actually running', () => {
         mockFs.existsSync.mockReturnValue(true);
-        mockFs.readFileSync.mockImplementation((p: any) => {
+        mockFs.readFileSync.mockImplementation((_p: any) => {
             return JSON.stringify({ pid: 99999, session: 'stale', port: 0 }) as any;
         });
         // process.kill(pid, 0) throws = process not running

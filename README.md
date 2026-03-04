@@ -6,7 +6,7 @@ A cross-platform CLI tool providing a Cursor-like "Debug Mode" loop for any codi
 - **Runtime Setup Guide**: See `docs/RUNTIME_PREREQS.md` for installing Java/Go/Python/Rust/PHP/.NET required by helper E2E tests.
 - **Agent-Agnostic**: Works with any coding assistant capable of modifying files and running basic OS commands.
 - **Vendored Runtime Helpers**: Small, standalone helpers for TypeScript/Node, Browser TS/JS, Java, Python, Rust, PHP, Go, and C# are installed in `.debughub/vendor`.
-- **Shared HTTP Contract**: All helpers follow one event contract (`helpers/http/EVENT_CONTRACT.md`) and submit best-effort HTTP events to the local collector.
+- **Shared HTTP Contract**: All helpers follow one event contract (`.debughub/vendor/<version>/http/EVENT_CONTRACT.md` after `debughub install`) and submit best-effort HTTP events to the local collector.
 - **Deterministic**: A `MANIFEST.json` and strict integrity verification ensures files are not tampered with.
 - **Safe and Local**: By default, the collector server only binds to `127.0.0.1`.
 
