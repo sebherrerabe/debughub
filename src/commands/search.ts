@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export function search(query: string, options: any) {
+export function search(query: string | undefined, options: any) {
     const cwd = process.cwd();
     const debughubDir = path.join(cwd, '.debughub');
 
@@ -69,7 +69,7 @@ export function search(query: string, options: any) {
     }
 
     if (matches === 0) {
-        console.log(`No matches found for query: "${query}"`);
+        console.log(query ? `No matches found for query: "${query}"` : 'No matches found for the given filters.');
     } else {
         console.log(`\nFound ${matches} match(es).`);
     }

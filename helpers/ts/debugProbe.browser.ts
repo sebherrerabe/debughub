@@ -1,3 +1,59 @@
+const _diagnosed: Record<string, boolean> = {};
+function diagnose(reason: string): void {
+    if (_diagnosed[reason]) return;
+    _diagnosed[reason] = true;
+    if (typeof console !== 'undefined') console.debug(`[DebugHub] ${reason}`);
+}
+
+interface ResolvedConfig {
+    enabled: boolean;
+    session: string;
+    endpoint: string;
+    source: string;
+}
+
+function normalizeEnabled(val: unknown): boolean {
+    return val === true || val === '1' || val === 'true';
+}
+
+function resolveConfig(): ResolvedConfig {
+    // 1. globalThis.__DEBUGHUB__ (runtime object, no bundler needed)
+    const g = globalThis as any;
+    if (g.__DEBUGHUB__) {
+        return {
+            enabled: normalizeEnabled(g.__DEBUGHUB__.enabled),
+            session: String(g.__DEBUGHUB__.session || ''),
+            endpoint: String(g.__DEBUGHUB__.endpoint || ''),
+            source: 'globalThis.__DEBUGHUB__',
+        };
+    }
+
+    // 2. globalThis.process?.env (webpack DefinePlugin replacements)
+    if (g.process?.env?.DEBUGHUB_ENABLED !== undefined) {
+        return {
+            enabled: normalizeEnabled(g.process.env.DEBUGHUB_ENABLED),
+            session: String(g.process.env.DEBUGHUB_SESSION || ''),
+            endpoint: String(g.process.env.DEBUGHUB_ENDPOINT || ''),
+            source: 'globalThis.process.env',
+        };
+    }
+
+    // 3. window.process?.env (legacy fallback)
+    if (typeof window !== 'undefined') {
+        const w = window as any;
+        if (w.process?.env?.DEBUGHUB_ENABLED !== undefined) {
+            return {
+                enabled: normalizeEnabled(w.process.env.DEBUGHUB_ENABLED),
+                session: String(w.process.env.DEBUGHUB_SESSION || ''),
+                endpoint: String(w.process.env.DEBUGHUB_ENDPOINT || ''),
+                source: 'window.process.env',
+            };
+        }
+    }
+
+    return { enabled: false, session: '', endpoint: '', source: '' };
+}
+
 export function debugProbe(
     label: string,
     data?: any,
@@ -9,18 +65,30 @@ export function debugProbe(
     }
 ): void {
     try {
-        // Browser bundlers should replace these or they remain undefined
-        // Users are expected to configure their bundlers if they want browser probing
-        const isEnabled = (window as any).process?.env?.DEBUGHUB_ENABLED === '1' || (import.meta as any).env?.VITE_DEBUGHUB_ENABLED === '1';
-        const sessionId = (window as any).process?.env?.DEBUGHUB_SESSION || (import.meta as any).env?.VITE_DEBUGHUB_SESSION;
-        if (!isEnabled || !sessionId) return;
+        const config = resolveConfig();
 
-        const endpoint = (window as any).process?.env?.DEBUGHUB_ENDPOINT || (import.meta as any).env?.VITE_DEBUGHUB_ENDPOINT;
-        if (!endpoint) return; // No file fallback in browser
+        if (!config.enabled) {
+            diagnose(
+                config.source
+                    ? `disabled: not enabled (config source: ${config.source})`
+                    : 'disabled: not enabled (checked globalThis.__DEBUGHUB__, globalThis.process.env, window.process.env \u2014 none had enabled=1)'
+            );
+            return;
+        }
+
+        if (!config.session) {
+            diagnose(`disabled: no session ID (config source: ${config.source})`);
+            return;
+        }
+
+        if (!config.endpoint) {
+            diagnose(`disabled: no endpoint (config source: ${config.source})`);
+            return;
+        }
 
         const event = {
             ts: new Date().toISOString(),
-            sessionId,
+            sessionId: config.session,
             label,
             data: data ?? null,
             hypothesisId: meta?.hypothesisId ?? null,
@@ -31,14 +99,16 @@ export function debugProbe(
         };
 
         const payload = JSON.stringify(event);
-        const url = new URL('/event', endpoint).toString();
+        const url = new URL('/event', config.endpoint).toString();
 
         // Fire and forget using standard fetch
         fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: payload,
-        }).catch(() => { });
+        }).catch((err) => {
+            diagnose(`send failed: ${err?.message || String(err)}`);
+        });
     } catch (err) {
         // Swallow exceptions
     }

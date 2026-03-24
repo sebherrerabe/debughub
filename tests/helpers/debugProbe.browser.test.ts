@@ -1,109 +1,197 @@
 /**
  * Tests for the browser debugProbe helper.
- * Since import.meta is not available in CJS/ts-jest, we test the window.process path only.
- * We use a manual transform to avoid the import.meta compilation error.
+ * No import.meta preprocessing needed — the helper is now CJS-safe.
  */
-
-// We need to preprocess the browser helper to remove import.meta references
-// before requiring it, since ts-jest in CJS mode can't handle them.
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 describe('debugProbe (browser helper)', () => {
     let mockFetch: jest.Mock;
-    let tmpFile: string;
-
-    beforeAll(() => {
-        // Read the source, replace import.meta references with undefined checks
-        const srcPath = path.resolve(__dirname, '..', '..', 'helpers', 'ts', 'debugProbe.browser.ts');
-        let src = fs.readFileSync(srcPath, 'utf-8');
-
-        // Replace (import.meta as any).env?.VITE_DEBUGHUB_* with undefined
-        // to make it compilable in CJS mode
-        src = src.replace(/\(import\.meta as any\)\.env\?\.VITE_DEBUGHUB_ENABLED/g, 'undefined');
-        src = src.replace(/\(import\.meta as any\)\.env\?\.VITE_DEBUGHUB_SESSION/g, 'undefined');
-        src = src.replace(/\(import\.meta as any\)\.env\?\.VITE_DEBUGHUB_ENDPOINT/g, 'undefined');
-
-        // Write to a temp file that we can require
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'debughub-browser-test-'));
-        tmpFile = path.join(tmpDir, 'debugProbe.browser.ts');
-        fs.writeFileSync(tmpFile, src, 'utf-8');
-    });
+    let debugProbe: typeof import('../../helpers/ts/debugProbe.browser').debugProbe;
 
     beforeEach(() => {
         jest.resetModules();
         jest.clearAllMocks();
         mockFetch = jest.fn().mockResolvedValue({ ok: true });
         (global as any).fetch = mockFetch;
-        // Set up a fake `window` with process.env
-        (global as any).window = {
-            process: {
-                env: {}
-            }
-        };
+        // Clean up any global config
+        delete (globalThis as any).__DEBUGHUB__;
+        delete (globalThis as any).process;
+        delete (global as any).window;
     });
 
     afterEach(() => {
         delete (global as any).fetch;
+        delete (globalThis as any).__DEBUGHUB__;
+        delete (globalThis as any).process;
         delete (global as any).window;
     });
 
     function loadBrowserProbe() {
-        // Require the preprocessed file via ts-jest
-        return require(tmpFile).debugProbe;
+        return require('../../helpers/ts/debugProbe.browser').debugProbe;
     }
 
-    it('is a no-op when DEBUGHUB_ENABLED is not set', () => {
-        (global as any).window.process.env = {};
-        const debugProbe = loadBrowserProbe();
-        debugProbe('test');
-        expect(mockFetch).not.toHaveBeenCalled();
-    });
+    // --- Config source: globalThis.__DEBUGHUB__ ---
 
-    it('is a no-op when no session is set', () => {
-        (global as any).window.process.env = { DEBUGHUB_ENABLED: '1' };
-        const debugProbe = loadBrowserProbe();
-        debugProbe('test');
-        expect(mockFetch).not.toHaveBeenCalled();
-    });
-
-    it('is a no-op when no endpoint is set', () => {
-        (global as any).window.process.env = {
-            DEBUGHUB_ENABLED: '1',
-            DEBUGHUB_SESSION: 'test-session',
+    it('sends POST when configured via globalThis.__DEBUGHUB__', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
         };
-        const debugProbe = loadBrowserProbe();
-        debugProbe('test');
-        expect(mockFetch).not.toHaveBeenCalled();
-    });
-
-    it('sends POST to endpoint when fully configured', () => {
-        (global as any).window.process.env = {
-            DEBUGHUB_ENABLED: '1',
-            DEBUGHUB_SESSION: 'test-session',
-            DEBUGHUB_ENDPOINT: 'http://127.0.0.1:9999',
-        };
-        const debugProbe = loadBrowserProbe();
-        debugProbe('browser-test', { key: 'val' }, { hypothesisId: 'H2', level: 'error' });
+        debugProbe = loadBrowserProbe();
+        debugProbe('test-label', { key: 'val' });
 
         expect(mockFetch).toHaveBeenCalledTimes(1);
         const [url, opts] = mockFetch.mock.calls[0];
         expect(url).toBe('http://127.0.0.1:9999/event');
         const body = JSON.parse(opts.body);
-        expect(body.label).toBe('browser-test');
+        expect(body.label).toBe('test-label');
         expect(body.runtime).toBe('browser');
-        expect(body.hypothesisId).toBe('H2');
-        expect(body.level).toBe('error');
+        expect(body.sessionId).toBe('test-session');
     });
 
-    it('sets default meta fields', () => {
-        (global as any).window.process.env = {
-            DEBUGHUB_ENABLED: '1',
-            DEBUGHUB_SESSION: 'test-session',
-            DEBUGHUB_ENDPOINT: 'http://127.0.0.1:9999',
+    it('accepts enabled as string "1" in __DEBUGHUB__', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: '1',
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
         };
-        const debugProbe = loadBrowserProbe();
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts enabled as string "true" in __DEBUGHUB__', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: 'true',
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats enabled: false as disabled in __DEBUGHUB__', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: false,
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('treats enabled: "0" as disabled in __DEBUGHUB__', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: '0',
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    // --- Config source: globalThis.process.env ---
+
+    it('sends POST when configured via globalThis.process.env', () => {
+        (globalThis as any).process = {
+            env: {
+                DEBUGHUB_ENABLED: '1',
+                DEBUGHUB_SESSION: 'gp-session',
+                DEBUGHUB_ENDPOINT: 'http://127.0.0.1:8888',
+            },
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('gp-test');
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(body.sessionId).toBe('gp-session');
+    });
+
+    // --- Config source: window.process.env ---
+
+    it('sends POST when configured via window.process.env', () => {
+        (global as any).window = {
+            process: {
+                env: {
+                    DEBUGHUB_ENABLED: '1',
+                    DEBUGHUB_SESSION: 'wp-session',
+                    DEBUGHUB_ENDPOINT: 'http://127.0.0.1:7777',
+                },
+            },
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('wp-test');
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(body.sessionId).toBe('wp-session');
+    });
+
+    // --- Priority: globalThis.__DEBUGHUB__ wins ---
+
+    it('prefers globalThis.__DEBUGHUB__ over globalThis.process.env', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'runtime-session',
+            endpoint: 'http://127.0.0.1:1111',
+        };
+        (globalThis as any).process = {
+            env: {
+                DEBUGHUB_ENABLED: '1',
+                DEBUGHUB_SESSION: 'env-session',
+                DEBUGHUB_ENDPOINT: 'http://127.0.0.1:2222',
+            },
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('priority-test');
+
+        const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(body.sessionId).toBe('runtime-session');
+    });
+
+    // --- No-op cases ---
+
+    it('is a no-op when no config source found', () => {
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when enabled but no session', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: '',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when enabled but no endpoint', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: '',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    // --- Default meta fields ---
+
+    it('sets default meta fields', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
         debugProbe('defaults-test');
 
         const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -114,22 +202,100 @@ describe('debugProbe (browser helper)', () => {
         expect(body.tags).toBeNull();
     });
 
+    it('passes meta fields correctly', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('meta-test', { key: 'val' }, { hypothesisId: 'H2', level: 'error', loc: 'file.ts:10', tags: { env: 'dev' } });
+
+        const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(body.hypothesisId).toBe('H2');
+        expect(body.level).toBe('error');
+        expect(body.loc).toBe('file.ts:10');
+        expect(body.tags).toEqual({ env: 'dev' });
+    });
+
+    // --- Error handling ---
+
     it('swallows fetch errors silently', async () => {
-        (global as any).window.process.env = {
-            DEBUGHUB_ENABLED: '1',
-            DEBUGHUB_SESSION: 'test-session',
-            DEBUGHUB_ENDPOINT: 'http://127.0.0.1:9999',
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
         };
         mockFetch.mockRejectedValue(new Error('network error'));
-        const debugProbe = loadBrowserProbe();
+        debugProbe = loadBrowserProbe();
 
         expect(() => debugProbe('test')).not.toThrow();
         await new Promise(r => setTimeout(r, 50));
     });
 
-    it('never throws even if window is corrupt', () => {
+    it('never throws even if globalThis is sparse', () => {
         (global as any).window = null;
-        const debugProbe = loadBrowserProbe();
+        debugProbe = loadBrowserProbe();
         expect(() => debugProbe('test')).not.toThrow();
+    });
+
+    // --- Diagnostics ---
+
+    it('logs diagnostic when not enabled', () => {
+        const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('[DebugHub] disabled: not enabled'));
+        debugSpy.mockRestore();
+    });
+
+    it('logs diagnostic with config source when enabled but missing session', () => {
+        const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: '',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('no session ID'));
+        expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('globalThis.__DEBUGHUB__'));
+        debugSpy.mockRestore();
+    });
+
+    it('logs diagnostic with config source when enabled but missing endpoint', () => {
+        const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: '',
+        };
+        debugProbe = loadBrowserProbe();
+        debugProbe('test');
+        expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('no endpoint'));
+        expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('globalThis.__DEBUGHUB__'));
+        debugSpy.mockRestore();
+    });
+
+    it('logs each distinct diagnostic reason independently', () => {
+        const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
+
+        // First call: no config at all
+        debugProbe = loadBrowserProbe();
+        debugProbe('test1');
+        expect(debugSpy).toHaveBeenCalledTimes(1);
+        expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('not enabled'));
+
+        // Second call with same reason: should not log again
+        debugProbe('test2');
+        expect(debugSpy).toHaveBeenCalledTimes(1);
+
+        // Now change config to have session missing — different reason
+        (globalThis as any).__DEBUGHUB__ = { enabled: true, session: '', endpoint: 'http://127.0.0.1:9999' };
+        debugProbe('test3');
+        expect(debugSpy).toHaveBeenCalledTimes(2);
+        expect(debugSpy).toHaveBeenLastCalledWith(expect.stringContaining('no session ID'));
+
+        debugSpy.mockRestore();
     });
 });

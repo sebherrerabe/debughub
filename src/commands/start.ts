@@ -42,6 +42,10 @@ export function start() {
     const outDir = path.join(debughubDir, 'out');
     fs.mkdirSync(outDir, { recursive: true });
 
+    // Eagerly create session file (touch semantics — create if missing, preserve if exists)
+    const outFile = path.join(outDir, `${sessionId}.jsonl`);
+    fs.closeSync(fs.openSync(outFile, 'a'));
+
     const port = process.env.DEBUGHUB_PORT ? parseInt(process.env.DEBUGHUB_PORT, 10) : 0; // 0 means pick random
 
     // Spawn the server in detached mode
@@ -93,5 +97,7 @@ export function start() {
         console.log(`  DEBUGHUB_ENABLED=1`);
         console.log(`  DEBUGHUB_SESSION=${sessionId}`);
         console.log(`  DEBUGHUB_ENDPOINT=http://127.0.0.1:${finalPort}\n`);
+        console.log(`Browser (no bundler config needed):`);
+        console.log(`  <script>window.__DEBUGHUB__ = { enabled: true, session: "${sessionId}", endpoint: "http://127.0.0.1:${finalPort}" };</script>\n`);
     }
 }

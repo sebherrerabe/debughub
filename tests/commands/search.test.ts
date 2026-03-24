@@ -124,6 +124,31 @@ describe('search command', () => {
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('1 match'));
     });
 
+    it('works with no query (filter-only search)', () => {
+        const e1 = JSON.stringify({ ts: '2024-01-01T00:00:00Z', label: 'test', level: 'info', data: null, hypothesisId: 'H1' });
+        const e2 = JSON.stringify({ ts: '2024-01-01T00:00:01Z', label: 'test', level: 'info', data: null, hypothesisId: 'H2' });
+        mockFs.existsSync.mockReturnValue(true);
+        mockFs.readFileSync.mockImplementation((p: any) => {
+            if (p.toString().includes('.jsonl')) return `${e1}\n${e2}\n` as any;
+            return '' as any;
+        });
+
+        search(undefined, { session: 'test', hypothesis: 'H1' });
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('1 match'));
+    });
+
+    it('shows appropriate message when filter-only search has no results', () => {
+        const event = JSON.stringify({ ts: '2024-01-01T00:00:00Z', label: 'hello', level: 'info', data: null });
+        mockFs.existsSync.mockReturnValue(true);
+        mockFs.readFileSync.mockImplementation((p: any) => {
+            if (p.toString().includes('.jsonl')) return `${event}\n` as any;
+            return '' as any;
+        });
+
+        search(undefined, { session: 'test', level: 'error' });
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No matches found for the given filters'));
+    });
+
     it('displays data when present', () => {
         const event = JSON.stringify({ ts: '2024-01-01T00:00:00Z', label: 'test', level: 'info', data: { x: 1 } });
         mockFs.existsSync.mockReturnValue(true);

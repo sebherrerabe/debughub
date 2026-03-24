@@ -39,7 +39,7 @@ export function createProgram(): Command {
         .option('--json', 'Print raw JSON instead of pretty output', false)
         .action(tail);
 
-    program.command('search <query>')
+    program.command('search [query]')
         .description('Searches the JSONL file for substring matches')
         .option('--label <label>', 'Filter by label')
         .option('--hypothesis <id>', 'Filter by hypothesisId')
@@ -58,6 +58,7 @@ export function createProgram(): Command {
 
     program.command('doctor')
         .description('Prints quick diagnostics')
+        .option('--browser', 'Run browser self-test (transport + helper)')
         .action(doctor);
 
     program.command('_server <sessionId> <port>', { hidden: true })

@@ -74,6 +74,29 @@ describe('start command', () => {
         expect(mockSpawn).toHaveBeenCalled();
     });
 
+    it('eagerly creates session file with touch semantics', () => {
+        mockFs.existsSync.mockImplementation((p: any) => {
+            const s = p.toString();
+            if (s.includes('state.json')) return false;
+            if (s.includes('.debughub')) return true;
+            return true;
+        });
+        mockFs.mkdirSync.mockReturnValue(undefined as any);
+        mockFs.openSync.mockReturnValue(42);
+        mockFs.closeSync.mockReturnValue(undefined);
+
+        const mockChild = { unref: jest.fn() };
+        mockSpawn.mockReturnValue(mockChild as any);
+
+        start();
+
+        // Should have called openSync with 'a' flag for touch semantics
+        const openCalls = mockFs.openSync.mock.calls;
+        const touchCall = openCalls.find((call: any) => call[0].toString().includes('.jsonl') && call[1] === 'a');
+        expect(touchCall).toBeDefined();
+        expect(mockFs.closeSync).toHaveBeenCalled();
+    });
+
     it('prints fallback message when port cannot be confirmed', () => {
         mockFs.existsSync.mockImplementation((p: any) => {
             const s = p.toString();
