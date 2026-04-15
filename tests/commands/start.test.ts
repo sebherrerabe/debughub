@@ -114,4 +114,36 @@ describe('start command', () => {
 
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("couldn't confirm port"));
     });
+
+    it('prints the JS module bootstrap snippet when port is confirmed', () => {
+        mockFs.existsSync.mockImplementation((p: any) => {
+            const s = p.toString();
+            if (s.includes('.debughub')) return true;
+            return true;
+        });
+        mockFs.readFileSync.mockImplementation((p: any) => {
+            if (p.toString().includes('state.json')) {
+                return JSON.stringify({ session: 'mocked-uuid-1234', port: 4312 }) as any;
+            }
+            return '' as any;
+        });
+        mockFs.mkdirSync.mockReturnValue(undefined as any);
+        mockFs.openSync.mockReturnValue(42);
+        mockFs.closeSync.mockReturnValue(undefined);
+
+        const mockChild = { unref: jest.fn() };
+        mockSpawn.mockReturnValue(mockChild as any);
+
+        start();
+
+        expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+            expect.stringContaining('runtime.env'),
+            expect.stringContaining('DEBUGHUB_SESSION=mocked-uuid-1234'),
+            'utf-8'
+        );
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Env File     : .debughub/runtime.env'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Browser (JS module):'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining(`import { initDebugHub } from '.debughub/vendor/current/ts/debugProbe.browser';`));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('initDebugHub({ enabled: true, session: "mocked-uuid-1234", endpoint: "http://127.0.0.1:4312" });'));
+    });
 });

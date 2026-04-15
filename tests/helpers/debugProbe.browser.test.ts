@@ -6,6 +6,9 @@
 describe('debugProbe (browser helper)', () => {
     let mockFetch: jest.Mock;
     let debugProbe: typeof import('../../helpers/ts/debugProbe.browser').debugProbe;
+    let initDebugHub: typeof import('../../helpers/ts/debugProbe.browser').initDebugHub;
+    let getDebugHubStatus: typeof import('../../helpers/ts/debugProbe.browser').getDebugHubStatus;
+    let debugProbeSelfTest: typeof import('../../helpers/ts/debugProbe.browser').debugProbeSelfTest;
 
     beforeEach(() => {
         jest.resetModules();
@@ -26,7 +29,12 @@ describe('debugProbe (browser helper)', () => {
     });
 
     function loadBrowserProbe() {
-        return require('../../helpers/ts/debugProbe.browser').debugProbe;
+        const mod = require('../../helpers/ts/debugProbe.browser');
+        debugProbe = mod.debugProbe;
+        initDebugHub = mod.initDebugHub;
+        getDebugHubStatus = mod.getDebugHubStatus;
+        debugProbeSelfTest = mod.debugProbeSelfTest;
+        return mod.debugProbe;
     }
 
     // --- Config source: globalThis.__DEBUGHUB__ ---
@@ -69,6 +77,43 @@ describe('debugProbe (browser helper)', () => {
         debugProbe = loadBrowserProbe();
         debugProbe('test');
         expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('initDebugHub seeds globalThis.__DEBUGHUB__ with normalized values', () => {
+        loadBrowserProbe();
+
+        initDebugHub({
+            enabled: 'true',
+            session: 'boot-session',
+            endpoint: 'http://127.0.0.1:4567',
+        });
+
+        expect((globalThis as any).__DEBUGHUB__).toEqual({
+            enabled: true,
+            session: 'boot-session',
+            endpoint: 'http://127.0.0.1:4567',
+        });
+    });
+
+    it('initDebugHub is idempotent across repeated calls', () => {
+        loadBrowserProbe();
+
+        initDebugHub({
+            enabled: true,
+            session: 'same-session',
+            endpoint: 'http://127.0.0.1:9999',
+        });
+        initDebugHub({
+            enabled: true,
+            session: 'same-session',
+            endpoint: 'http://127.0.0.1:9999',
+        });
+
+        expect((globalThis as any).__DEBUGHUB__).toEqual({
+            enabled: true,
+            session: 'same-session',
+            endpoint: 'http://127.0.0.1:9999',
+        });
     });
 
     it('treats enabled: false as disabled in __DEBUGHUB__', () => {
@@ -153,12 +198,41 @@ describe('debugProbe (browser helper)', () => {
         expect(body.sessionId).toBe('runtime-session');
     });
 
+    it('getDebugHubStatus reports resolved config from globalThis.__DEBUGHUB__', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: '1',
+            session: 'runtime-session',
+            endpoint: 'http://127.0.0.1:1111',
+        };
+        loadBrowserProbe();
+
+        expect(getDebugHubStatus()).toEqual({
+            enabled: true,
+            configSource: 'globalThis.__DEBUGHUB__',
+            sessionPresent: true,
+            endpointPresent: true,
+            lastSendError: null,
+        });
+    });
+
     // --- No-op cases ---
 
     it('is a no-op when no config source found', () => {
         debugProbe = loadBrowserProbe();
         debugProbe('test');
         expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('getDebugHubStatus reports no config when nothing is configured', () => {
+        loadBrowserProbe();
+
+        expect(getDebugHubStatus()).toEqual({
+            enabled: false,
+            configSource: '',
+            sessionPresent: false,
+            endpointPresent: false,
+            lastSendError: null,
+        });
     });
 
     it('is a no-op when enabled but no session', () => {
@@ -233,10 +307,50 @@ describe('debugProbe (browser helper)', () => {
         await new Promise(r => setTimeout(r, 50));
     });
 
+    it('getDebugHubStatus exposes the last send error', async () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'test-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        mockFetch.mockRejectedValue(new Error('network error'));
+        loadBrowserProbe();
+
+        debugProbe('test');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(getDebugHubStatus()).toEqual({
+            enabled: true,
+            configSource: 'globalThis.__DEBUGHUB__',
+            sessionPresent: true,
+            endpointPresent: true,
+            lastSendError: 'network error',
+        });
+    });
+
     it('never throws even if globalThis is sparse', () => {
         (global as any).window = null;
         debugProbe = loadBrowserProbe();
         expect(() => debugProbe('test')).not.toThrow();
+    });
+
+    it('debugProbeSelfTest sends the expected event through debugProbe', () => {
+        (globalThis as any).__DEBUGHUB__ = {
+            enabled: true,
+            session: 'selftest-session',
+            endpoint: 'http://127.0.0.1:9999',
+        };
+        loadBrowserProbe();
+
+        debugProbeSelfTest();
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const [url, opts] = mockFetch.mock.calls[0];
+        expect(url).toBe('http://127.0.0.1:9999/event');
+        const body = JSON.parse(opts.body);
+        expect(body.label).toBe('__selftest__');
+        expect(body.data.test).toBe('helper');
+        expect(typeof body.data.ts).toBe('number');
     });
 
     // --- Diagnostics ---

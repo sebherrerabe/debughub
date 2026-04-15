@@ -36,10 +36,17 @@ Import the vendored files in the files you are altering for debugging. The examp
   ```
 
 - **Java**:
-  Include `DebugProbe.java` into the build or directly into the package structure being compiled, and call:
-  ```java
-  DebugProbe.probe("Executing query", sqlArgs, Map.of("hypothesisId", "H2", "level", "warn"));
-  ```
+  Prefer the inline HTTP path for temporary debugging:
+  1. Run `debughub inject java --mode inline-http --target <path-to-class>`.
+  2. Paste the generated imports and `debugHubEmit(...)` members into that class.
+  3. Add the generated `debugHubEmit(...)` call where you want the event.
+  4. Start DebugHub and attach `.debughub/runtime.env` in IntelliJ EnvFile.
+  5. Restart the run configuration after wiring the env file and after any later `debughub start`.
+  6. Verify with `debughub doctor --java`.
+
+  For full Java-specific guidance, see [JAVA_SETUP.md](./JAVA_SETUP.md).
+
+For browser-specific bootstrap patterns, see [BROWSER_SETUP.md](./BROWSER_SETUP.md).
 
 ## 5. View Events
 Execute the task and run:

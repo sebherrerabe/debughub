@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as http from 'http';
 import * as readline from 'readline';
+import { spawnSync } from 'child_process';
 
 jest.mock('fs');
 const mockFs = fs as jest.Mocked<typeof fs>;
@@ -11,6 +12,11 @@ const mockHttp = http as jest.Mocked<typeof http>;
 
 jest.mock('readline');
 const mockReadline = readline as jest.Mocked<typeof readline>;
+
+jest.mock('child_process', () => ({
+    spawnSync: jest.fn(),
+}));
+const mockSpawnSync = spawnSync as jest.MockedFunction<typeof spawnSync>;
 
 import { doctor } from '../../src/commands/doctor';
 
@@ -52,9 +58,11 @@ describe('doctor command', () => {
         mockFs.readFileSync.mockImplementation((p: any) => {
             if (p.toString().includes('current')) return '1.0.0' as any;
             if (p.toString().includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (p.toString().includes('.jsonl')) return '{"label":"one"}\n{"label":"two"}\n' as any;
             return '' as any;
         });
         mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 32 } as any);
 
         // Mock http.request to simulate a 204 response
         const mockReq = {
@@ -72,6 +80,7 @@ describe('doctor command', () => {
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[x] Collector'));
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Session ID: abc'));
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[x] Output Path'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[x] Events     : 2 events in session file'));
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[x] Reachability'));
     });
 
@@ -80,9 +89,11 @@ describe('doctor command', () => {
         mockFs.readFileSync.mockImplementation((p: any) => {
             if (p.toString().includes('current')) return '1.0.0' as any;
             if (p.toString().includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (p.toString().includes('.jsonl')) return '{"label":"one"}\n' as any;
             return '' as any;
         });
         mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 16 } as any);
 
         const mockReq = { on: jest.fn(), end: jest.fn() };
         mockHttp.request.mockImplementation((opts: any, cb: any) => {
@@ -99,9 +110,11 @@ describe('doctor command', () => {
         mockFs.readFileSync.mockImplementation((p: any) => {
             if (p.toString().includes('current')) return '1.0.0' as any;
             if (p.toString().includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (p.toString().includes('.jsonl')) return '{"label":"one"}\n' as any;
             return '' as any;
         });
         mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 16 } as any);
 
         const mockReq = {
             on: jest.fn().mockImplementation((event: string, cb: (error: Error) => void) => {
@@ -123,9 +136,11 @@ describe('doctor command', () => {
         mockFs.readFileSync.mockImplementation((p: any) => {
             if (p.toString().includes('current')) return '1.0.0' as any;
             if (p.toString().includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (p.toString().includes('.jsonl')) return '{"label":"one"}\n' as any;
             return '' as any;
         });
         mockFs.accessSync.mockImplementation(() => { throw new Error('EACCES'); });
+        mockFs.statSync.mockReturnValue({ size: 16 } as any);
 
         const mockReq = { on: jest.fn(), end: jest.fn() };
         mockHttp.request.mockImplementation((opts: any, cb: any) => {
@@ -142,9 +157,11 @@ describe('doctor command', () => {
         mockFs.readFileSync.mockImplementation((p: any) => {
             if (p.toString().includes('current')) return '1.0.0' as any;
             if (p.toString().includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (p.toString().includes('.jsonl')) return '{"label":"one"}\n' as any;
             return '' as any;
         });
         mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 16 } as any);
 
         const mockReq = { on: jest.fn(), end: jest.fn() };
         mockHttp.request.mockImplementation((opts: any, cb: any) => {
@@ -182,5 +199,124 @@ describe('doctor command', () => {
 
         doctor({});
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('unreadable or corrupt'));
+    });
+
+    it('reports why no events were received when the session file is empty', () => {
+        mockFs.existsSync.mockReturnValue(true);
+        mockFs.readFileSync.mockImplementation((p: any) => {
+            if (p.toString().includes('current')) return '1.0.0' as any;
+            if (p.toString().includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (p.toString().includes('.jsonl')) return '' as any;
+            return '' as any;
+        });
+        mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 0 } as any);
+
+        const mockReq = { on: jest.fn(), end: jest.fn() };
+        mockHttp.request.mockImplementation((opts: any, cb: any) => {
+            if (cb) cb({ statusCode: 204 });
+            return mockReq as any;
+        });
+
+        doctor({});
+
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Session file exists but is empty'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Helper not loaded'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('call initDebugHub()'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('doctor --browser'));
+    });
+
+    it('runs Java diagnostics using an explicit env file and prints a self-test snippet', () => {
+        mockFs.existsSync.mockImplementation((p: any) => {
+            const s = p.toString();
+            if (s.includes('current')) return true;
+            if (s.includes('state.json')) return true;
+            if (s.includes('runtime.env')) return true;
+            if (s.includes('.jsonl')) return true;
+            return false;
+        });
+        mockFs.readFileSync.mockImplementation((p: any) => {
+            const s = p.toString();
+            if (s.includes('current')) return '1.0.0' as any;
+            if (s.includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (s.includes('runtime.env')) {
+                return 'DEBUGHUB_ENABLED=1\nDEBUGHUB_SESSION=abc\nDEBUGHUB_ENDPOINT=http://127.0.0.1:9999\n' as any;
+            }
+            if (s.includes('.jsonl')) return '{"label":"one"}\n' as any;
+            return '' as any;
+        });
+        mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 16 } as any);
+        mockSpawnSync.mockReturnValue({
+            stdout: '',
+            stderr: 'openjdk version "17.0.10" 2024-01-16',
+        } as any);
+
+        const mockReq = { on: jest.fn(), end: jest.fn() };
+        mockHttp.request.mockImplementation((_opts: any, cb: any) => {
+            if (cb) cb({ statusCode: 204 });
+            return mockReq as any;
+        });
+
+        doctor({ java: true, envFile: '.debughub/runtime.env' });
+
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Java Diagnostics'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[x] Java       : 17.0.10'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('[x] Env Source : .debughub/runtime.env'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Session matches active collector'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Env endpoint matches active collector'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('__java_selftest__'));
+    });
+
+    it('reports stale Java env values and restart guidance', () => {
+        mockFs.existsSync.mockImplementation((p: any) => {
+            const s = p.toString();
+            if (s.includes('current')) return true;
+            if (s.includes('state.json')) return true;
+            if (s.includes('runtime.env')) return true;
+            if (s.includes('.jsonl')) return true;
+            return false;
+        });
+        mockFs.readFileSync.mockImplementation((p: any) => {
+            const s = p.toString();
+            if (s.includes('current')) return '1.0.0' as any;
+            if (s.includes('state.json')) return JSON.stringify({ session: 'abc', pid: 123, port: 9999 }) as any;
+            if (s.includes('runtime.env')) {
+                return 'DEBUGHUB_ENABLED=0\nDEBUGHUB_SESSION=stale-session\nDEBUGHUB_ENDPOINT=http://127.0.0.1:7777\n' as any;
+            }
+            if (s.includes('.jsonl')) return '{"label":"one"}\n' as any;
+            return '' as any;
+        });
+        mockFs.accessSync.mockReturnValue(undefined);
+        mockFs.statSync.mockReturnValue({ size: 16 } as any);
+        mockSpawnSync.mockReturnValue({
+            stdout: '',
+            stderr: 'openjdk version "8.0.392" 2023-10-17',
+        } as any);
+
+        const okReq = { on: jest.fn(), end: jest.fn() };
+        const badReq = {
+            on: jest.fn().mockImplementation((event: string, cb: (error: Error) => void) => {
+                if (event === 'error') cb(new Error('ECONNREFUSED'));
+                return badReq;
+            }),
+            end: jest.fn(),
+        };
+        mockHttp.request.mockImplementation((opts: any, cb: any) => {
+            if (opts.port === 9999) {
+                if (cb) cb({ statusCode: 204 });
+                return okReq as any;
+            }
+            return badReq as any;
+        });
+
+        doctor({ java: true, envFile: '.debughub/runtime.env' });
+
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Java 11+ is required'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUGHUB_ENABLED must be 1'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Session mismatch'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Env endpoint mismatch'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('restart the IntelliJ run configuration'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Error connecting to endpoint'));
     });
 });

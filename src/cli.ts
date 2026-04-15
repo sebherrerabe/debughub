@@ -9,6 +9,7 @@ import { clear } from './commands/clear';
 import { verify } from './commands/verify';
 import { doctor } from './commands/doctor';
 import { _server } from './commands/server';
+import { inject } from './commands/inject';
 
 const pkg = require('../package.json') as { version: string };
 
@@ -59,7 +60,17 @@ export function createProgram(): Command {
     program.command('doctor')
         .description('Prints quick diagnostics')
         .option('--browser', 'Run browser self-test (transport + helper)')
+        .option('--java', 'Run Java diagnostics and self-test guidance')
+        .option('--env-file <path>', 'Read DebugHub env vars from a specific env file')
         .action(doctor);
+
+    program.command('inject <runtime>')
+        .description('Print runtime-specific instrumentation guidance without editing files')
+        .option('--mode <mode>', 'Injection mode for the target runtime', 'inline-http')
+        .option('--target <file>', 'Path to the file you are instrumenting')
+        .option('--module <dir>', 'Module root to use for repo-aware guidance')
+        .option('--package <name>', 'Java package override for helper-class output')
+        .action(inject);
 
     program.command('_server <sessionId> <port>', { hidden: true })
         .action(_server);

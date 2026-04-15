@@ -1,4 +1,31 @@
 const _diagnosed: Record<string, boolean> = {};
+let _lastSendError: string | null = null;
+
+interface DebugHubRuntimeConfig {
+    enabled: boolean | string;
+    session: string;
+    endpoint: string;
+}
+
+interface DebugHubStatus {
+    enabled: boolean;
+    configSource: string;
+    sessionPresent: boolean;
+    endpointPresent: boolean;
+    lastSendError: string | null;
+}
+
+interface DebugHubGlobal {
+    __DEBUGHUB__?: DebugHubRuntimeConfig;
+    process?: {
+        env?: {
+            DEBUGHUB_ENABLED?: unknown;
+            DEBUGHUB_SESSION?: unknown;
+            DEBUGHUB_ENDPOINT?: unknown;
+        };
+    };
+}
+
 function diagnose(reason: string): void {
     if (_diagnosed[reason]) return;
     _diagnosed[reason] = true;
@@ -18,7 +45,7 @@ function normalizeEnabled(val: unknown): boolean {
 
 function resolveConfig(): ResolvedConfig {
     // 1. globalThis.__DEBUGHUB__ (runtime object, no bundler needed)
-    const g = globalThis as any;
+    const g = globalThis as unknown as DebugHubGlobal;
     if (g.__DEBUGHUB__) {
         return {
             enabled: normalizeEnabled(g.__DEBUGHUB__.enabled),
@@ -40,7 +67,7 @@ function resolveConfig(): ResolvedConfig {
 
     // 3. window.process?.env (legacy fallback)
     if (typeof window !== 'undefined') {
-        const w = window as any;
+        const w = window as unknown as DebugHubGlobal;
         if (w.process?.env?.DEBUGHUB_ENABLED !== undefined) {
             return {
                 enabled: normalizeEnabled(w.process.env.DEBUGHUB_ENABLED),
@@ -52,6 +79,30 @@ function resolveConfig(): ResolvedConfig {
     }
 
     return { enabled: false, session: '', endpoint: '', source: '' };
+}
+
+export function initDebugHub(config: DebugHubRuntimeConfig): void {
+    const g = globalThis as unknown as DebugHubGlobal;
+    g.__DEBUGHUB__ = {
+        enabled: normalizeEnabled(config.enabled),
+        session: String(config.session || ''),
+        endpoint: String(config.endpoint || ''),
+    };
+}
+
+export function getDebugHubStatus(): DebugHubStatus {
+    const config = resolveConfig();
+    return {
+        enabled: config.enabled,
+        configSource: config.source,
+        sessionPresent: config.session.length > 0,
+        endpointPresent: config.endpoint.length > 0,
+        lastSendError: _lastSendError,
+    };
+}
+
+export function debugProbeSelfTest(): void {
+    debugProbe('__selftest__', { test: 'helper', ts: Date.now() });
 }
 
 export function debugProbe(
@@ -107,7 +158,8 @@ export function debugProbe(
             headers: { 'Content-Type': 'application/json' },
             body: payload,
         }).catch((err) => {
-            diagnose(`send failed: ${err?.message || String(err)}`);
+            _lastSendError = err instanceof Error ? err.message : String(err);
+            diagnose(`send failed: ${_lastSendError}`);
         });
     } catch (err) {
         // Swallow exceptions

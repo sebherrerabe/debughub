@@ -12,6 +12,7 @@ describe('CLI smoke test', () => {
         expect(output).toContain('clear');
         expect(output).toContain('verify');
         expect(output).toContain('doctor');
+        expect(output).toContain('inject');
     });
 
     it('prints version', () => {

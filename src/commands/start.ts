@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { spawn } from 'child_process';
+import { writeRuntimeEnvFile } from '../lib/runtimeEnv';
 
 export function start() {
     const cwd = process.cwd();
@@ -89,15 +90,20 @@ export function start() {
         console.log("Started collector but couldn't confirm port. Check .debughub/state.json");
         // Fallback display
     } else {
+        const runtimeEnvFile = writeRuntimeEnvFile(debughubDir, sessionId, `http://127.0.0.1:${finalPort}`);
         console.log(`\nDebugHub Collector Started!`);
         console.log(`Session ID   : ${sessionId}`);
         console.log(`Endpoint     : http://127.0.0.1:${finalPort}/event`);
         console.log(`Output File  : .debughub/out/${sessionId}.jsonl`);
+        console.log(`Env File     : ${path.relative(cwd, runtimeEnvFile)}`);
         console.log(`\nEnvironment variables to set:`);
         console.log(`  DEBUGHUB_ENABLED=1`);
         console.log(`  DEBUGHUB_SESSION=${sessionId}`);
         console.log(`  DEBUGHUB_ENDPOINT=http://127.0.0.1:${finalPort}\n`);
         console.log(`Browser (no bundler config needed):`);
         console.log(`  <script>window.__DEBUGHUB__ = { enabled: true, session: "${sessionId}", endpoint: "http://127.0.0.1:${finalPort}" };</script>\n`);
+        console.log(`Browser (JS module):`);
+        console.log(`  import { initDebugHub } from '.debughub/vendor/current/ts/debugProbe.browser';`);
+        console.log(`  initDebugHub({ enabled: true, session: "${sessionId}", endpoint: "http://127.0.0.1:${finalPort}" });\n`);
     }
 }

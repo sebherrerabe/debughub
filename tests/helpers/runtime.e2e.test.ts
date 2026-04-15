@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { buildJavaMain, type FixtureMode } from './e2e/fixtures/java/mainFactory';
+import { buildInlineJavaMain, buildJavaMain, type FixtureMode, type JavaFixtureMode } from './e2e/fixtures/java/mainFactory';
 import { buildPythonMain } from './e2e/fixtures/python/mainFactory';
 import { buildGoMain } from './e2e/fixtures/go/mainFactory';
 import { buildPhpMain } from './e2e/fixtures/php/mainFactory';
@@ -187,6 +187,39 @@ describe('cross-runtime helpers e2e', () => {
             });
 
             if (runtimeCfg.runtime === 'java') {
+                it('serializes Java helper payloads with data, level, and tags', async () => {
+                    const server = await createCaptureServer();
+                    try {
+                        const result = runJava('richPayload', server.endpoint, SESSION_ID, prereqs);
+                        expectSuccessfulExit(result, 'java', 'richPayload');
+                        const events = await server.waitForEvents(1, 10000);
+                        const event = validateEventContract(events[0], 'java', 'java_emit_with_data', SESSION_ID);
+                        expect(event.data).toEqual({ count: 2, items: ['one', 'two'] });
+                        expect(event.hypothesisId).toBe('H2');
+                        expect(event.loc).toBe('Main.java:17');
+                        expect(event.level).toBe('warn');
+                        expect(event.tags).toEqual({ area: 'java-helper' });
+                    } finally {
+                        await server.close();
+                    }
+                });
+
+                it('emits a valid event with the inline Java snippet and no helper class', async () => {
+                    const server = await createCaptureServer();
+                    try {
+                        const result = runInlineJava(server.endpoint, SESSION_ID, prereqs);
+                        expectSuccessfulExit(result, 'java', 'inlineEmit');
+                        const events = await server.waitForEvents(1, 10000);
+                        const event = validateEventContract(events[0], 'java', 'java_inline_emit', SESSION_ID);
+                        expect(event.data).toEqual({ path: 'inline' });
+                        expect(event.hypothesisId).toBe('H3');
+                        expect(event.level).toBe('info');
+                        expect(event.tags).toEqual({ mode: 'inline-http' });
+                    } finally {
+                        await server.close();
+                    }
+                });
+
                 it('never throws on malformed endpoint', () => {
                     const result = runtimeCfg.run('emit', MALFORMED_ENDPOINT, SESSION_ID);
                     expectSuccessfulExit(result, 'java', 'malformedEndpoint');
@@ -200,7 +233,7 @@ function helperPath(relPath: string): string {
     return path.join(REPO_ROOT, 'helpers', relPath);
 }
 
-function buildEnv(mode: FixtureMode, endpoint: string, sessionId?: string): NodeJS.ProcessEnv {
+function buildEnv(mode: FixtureMode | JavaFixtureMode, endpoint: string, sessionId?: string): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env };
     env.DEBUGHUB_ENABLED = mode === 'disabled' ? '0' : '1';
     if (mode === 'missingSession') {
@@ -212,7 +245,7 @@ function buildEnv(mode: FixtureMode, endpoint: string, sessionId?: string): Node
     return env;
 }
 
-function runJava(mode: FixtureMode, endpoint: string, sessionId: string | undefined, prereqs: RuntimePrereqs): CommandResult {
+function runJava(mode: JavaFixtureMode, endpoint: string, sessionId: string | undefined, prereqs: RuntimePrereqs): CommandResult {
     const tmp = makeTempDir('debughub-java-e2e-');
     try {
         copyFile(helperPath(path.join('java', 'DebugProbe.java')), path.join(tmp, 'debughub', 'DebugProbe.java'));
@@ -224,6 +257,24 @@ function runJava(mode: FixtureMode, endpoint: string, sessionId: string | undefi
         return runCommand(prereqs.java, ['-cp', tmp, 'Main', mode], {
             cwd: tmp,
             env: buildEnv(mode, endpoint, sessionId),
+            timeoutMs: 30000,
+        });
+    } finally {
+        removeDir(tmp);
+    }
+}
+
+function runInlineJava(endpoint: string, sessionId: string | undefined, prereqs: RuntimePrereqs): CommandResult {
+    const tmp = makeTempDir('debughub-java-inline-e2e-');
+    try {
+        writeFiles(tmp, { 'Main.java': buildInlineJavaMain() });
+
+        const compileResult = runCommand(prereqs.javac, ['Main.java'], { cwd: tmp });
+        expectSuccessfulExit(compileResult, 'java', 'inlineCompile');
+
+        return runCommand(prereqs.java, ['Main'], {
+            cwd: tmp,
+            env: buildEnv('emit', endpoint, sessionId),
             timeoutMs: 30000,
         });
     } finally {

@@ -6,6 +6,7 @@ A cross-platform CLI tool providing a Cursor-like "Debug Mode" loop for any codi
 - **Runtime Setup Guide**: See `docs/RUNTIME_PREREQS.md` for installing Java/Go/Python/Rust/PHP/.NET required by helper E2E tests.
 - **Agent-Agnostic**: Works with any coding assistant capable of modifying files and running basic OS commands.
 - **Vendored Runtime Helpers**: Small, standalone helpers for TypeScript/Node, Browser TS/JS, Java, Python, Rust, PHP, Go, and C# are installed in `.debughub/vendor`.
+- **Java Inline Injection**: `debughub inject java --mode inline-http` prints a paste-ready `HttpClient` emitter for the class you are instrumenting.
 - **Shared HTTP Contract**: All helpers follow one event contract (`.debughub/vendor/<version>/http/EVENT_CONTRACT.md` after `debughub install`) and submit best-effort HTTP events to the local collector.
 - **Deterministic**: A `MANIFEST.json` and strict integrity verification ensures files are not tampered with.
 - **Safe and Local**: By default, the collector server only binds to `127.0.0.1`.
@@ -24,13 +25,19 @@ npx debughub start
    - `DEBUGHUB_ENABLED=1`
    - `DEBUGHUB_SESSION=<sessionId>`
    - `DEBUGHUB_ENDPOINT=http://127.0.0.1:<port>`
-
-4. Use the helper inside your app code (see `.debughub/vendor/<version>`).
-5. Run your app and reproduce the issue.
-6. Check logs:
+   - or attach `.debughub/runtime.env` from your IDE run configuration
+4. For Java, prefer:
+```bash
+debughub inject java --mode inline-http --target path/to/MyService.java
+```
+5. Use the generated snippet or the vendored helper inside your app code (see `.debughub/vendor/<version>`).
+6. Run your app and reproduce the issue.
+7. Check logs:
 ```bash
 npx debughub tail --n 50
 ```
+
+See `docs/JAVA_SETUP.md` for the IntelliJ + EnvFile workflow.
 
 ## Security Model
 - No network traffic leaves your local machine.
@@ -47,3 +54,4 @@ npx debughub tail --n 50
 - `debughub clear`: Clears the output log file.
 - `debughub verify`: Verifies integrity of the vendor code in `.debughub/`.
 - `debughub doctor`: Checks installation and system status.
+- `debughub inject java`: Prints repo-aware Java instrumentation guidance without editing files.
